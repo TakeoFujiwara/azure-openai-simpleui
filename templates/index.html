@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keko's AI</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.1/markdown-it.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .content-wrapper {
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+
+        #chat-container {
+            margin-top: 80px;
+            margin-bottom: 160px;
+            width: 100%;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 80%;
+            white-space: pre-wrap;
+        }
+
+        .message p {
+            margin: 0 0 10px 0;
+        }
+
+        .message ul,
+        .message ol {
+            margin: 0 0 10px 0;
+            padding-left: 20px;
+        }
+
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: auto;
+        }
+
+        .assistant-message {
+            background-color: #f5f5f5;
+            margin-right: auto;
+        }
+
+        .input-area {
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+        }
+
+        #message-form {
+            display: flex;
+            gap: 10px;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 20px;
+            align-items: flex-start;
+        }
+
+        #message-input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            min-height: 100px;
+            resize: vertical;
+            line-height: 1.5;
+            font-family: inherit;
+            max-height: 300px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            white-space: nowrap;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+        }
+
+        .typing-indicator {
+            color: #666;
+            font-style: italic;
+            padding: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .message {
+                max-width: 90%;
+            }
+
+            .header {
+                padding: 15px;
+            }
+
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .input-area {
+                padding: 15px;
+            }
+
+            #message-input {
+                padding: 10px;
+                min-height: 80px;
+            }
+
+            button {
+                padding: 10px 20px;
+            }
+
+            #chat-container {
+                margin-bottom: 140px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="content-wrapper">
+            <h1>Keko's AI</h1>
+        </div>
+    </div>
+
+    <div class="content-wrapper">
+        <div id="chat-container"></div>
+    </div>
+
+    <div class="input-area">
+        <form id="message-form">
+            <textarea id="message-input" placeholder="メッセージを入力してください..." required></textarea>
+            <button type="submit" id="send-button">送信</button>
+        </form>
+    </div>
+
+    <script>
+        const md = window.markdownit();
+        const chatContainer = document.getElementById('chat-container');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        let currentAssistantMessage = '';
+
+        // テキストエリアの高さを自動調整する関数
+        function adjustTextareaHeight(textarea) {
+            textarea.style.height = 'auto';
+            const newHeight = Math.min(textarea.scrollHeight, 300);
+            textarea.style.height = `${newHeight}px`;
+        }
+
+        // テキストエリアの入力イベント
+        messageInput.addEventListener('input', function () {
+            adjustTextareaHeight(this);
+        });
+
+        function convertNewlinesToMarkdown(text) {
+            return text
+                .split('\n')
+                .map(line => {
+                    if (line.trim().match(/^[*-]|\d+\./)) {
+                        return line;
+                    }
+                    if (line.trim() === '') {
+                        return '\n';
+                    }
+                    return line + '  ';
+                })
+                .join('\n');
+        }
+
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            appendMessage('user', message);
+            messageInput.value = '';
+            adjustTextareaHeight(messageInput);
+            sendButton.disabled = true;
+
+            const typingIndicator = document.createElement('div');
+            typingIndicator.className = 'message assistant-message typing-indicator';
+            typingIndicator.textContent = '入力中...';
+            chatContainer.appendChild(typingIndicator);
+
+            try {
+                console.log('Sending message to server:', message);
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                console.log('Server response received');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                currentAssistantMessage = '';
+
+                chatContainer.removeChild(typingIndicator);
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        console.log('Stream complete');
+                        break;
+                    }
+
+                    const text = decoder.decode(value);
+                    console.log('Received chunk:', text);
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                console.log('Parsed data:', data);
+                                if (data.content) {
+                                    currentAssistantMessage += data.content;
+                                    updateAssistantMessage(currentAssistantMessage);
+                                } else if (data.error) {
+                                    throw new Error(data.error);
+                                }
+                            } catch (e) {
+                                console.error('Failed to parse SSE data:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                appendMessage('assistant', `エラーが発生しました: ${error.message}`);
+                chatContainer.removeChild(typingIndicator);
+            } finally {
+                sendButton.disabled = false;
+                currentAssistantMessage = '';
+                window.scrollTo({
+                    top: document.body.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }
+        });
+
+        function appendMessage(role, content) {
+            console.log(`Appending ${role} message:`, content);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}-message`;
+
+            if (role === 'assistant') {
+                const markdownContent = convertNewlinesToMarkdown(content);
+                messageDiv.innerHTML = md.render(markdownContent);
+            } else {
+                messageDiv.textContent = content;
+            }
+
+            chatContainer.appendChild(messageDiv);
+            window.scrollTo({
+                top: document.body.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+
+        function updateAssistantMessage(content) {
+            console.log('Updating assistant message:', content);
+            let assistantMessage = chatContainer.querySelector('.assistant-message:last-child');
+
+            if (!assistantMessage || !assistantMessage.classList.contains('assistant-message')) {
+                assistantMessage = document.createElement('div');
+                assistantMessage.className = 'message assistant-message';
+                chatContainer.appendChild(assistantMessage);
+            }
+
+            const markdownContent = convertNewlinesToMarkdown(content);
+            assistantMessage.innerHTML = md.render(markdownContent);
+            window.scrollTo({
+                top: document.body.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+
+        // 初期の高さ調整
+        adjustTextareaHeight(messageInput);
+    </script>
+</body>
+
+</html>
