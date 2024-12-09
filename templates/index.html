@@ -1,12 +1,10 @@
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Keko's AI</title>
     <style>
-        /* 既存のスタイル */
         body {
             font-family: Arial, sans-serif;
             margin: 0;
@@ -157,23 +155,10 @@
         }
 
         @keyframes dots {
-
-            0%,
-            20% {
-                content: '';
-            }
-
-            40% {
-                content: '.';
-            }
-
-            60% {
-                content: '..';
-            }
-
-            80% {
-                content: '...';
-            }
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80% { content: '...'; }
         }
 
         @media (max-width: 600px) {
@@ -212,7 +197,6 @@
         }
     </style>
 </head>
-
 <body>
     <div class="header">
         <div class="content-wrapper">
@@ -239,19 +223,9 @@
         let currentAssistantMessage = '';
         let typingIndicator = null;
 
-        // シンプルなテキスト処理関数
         function formatText(text) {
-            return text
-                .split('\n')
-                .map(line => {
-                    // URLをリンクに変換
-                    line = line.replace(
-                        /(https?:\/\/[^\s]+)/g,
-                        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-                    );
-                    return line;
-                })
-                .join('<br>');
+            if (!text) return '';
+            return text.split('\n').join('<br>');
         }
 
         function adjustTextareaHeight(textarea) {
@@ -312,7 +286,6 @@
             showTypingIndicator('接続中');
 
             try {
-                console.log('Sending message to server:', message);
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {
@@ -325,9 +298,8 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                console.log('Server response received');
                 updateTypingIndicator('応答を生成中');
-
+                
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 currentAssistantMessage = '';
@@ -335,20 +307,18 @@
                 let isFirstChunk = true;
                 while (true) {
                     const { value, done } = await reader.read();
-                    if (done) {
-                        console.log('Stream complete');
-                        break;
-                    }
+                    if (done) break;
 
                     const text = decoder.decode(value);
-                    console.log('Received chunk:', text);
                     const lines = text.split('\n');
 
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             try {
-                                const data = JSON.parse(line.slice(6));
-                                console.log('Parsed data:', data);
+                                const jsonStr = line.slice(6);
+                                if (!jsonStr) continue;
+                                
+                                const data = JSON.parse(jsonStr);
                                 if (data.content) {
                                     if (isFirstChunk) {
                                         removeTypingIndicator();
@@ -381,7 +351,6 @@
         });
 
         function appendMessage(role, content) {
-            console.log(`Appending ${role} message:`, content);
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}-message`;
 
@@ -399,7 +368,6 @@
         }
 
         function updateAssistantMessage(content) {
-            console.log('Updating assistant message:', content);
             let assistantMessage = chatContainer.querySelector('.assistant-message:last-child');
 
             if (!assistantMessage || !assistantMessage.classList.contains('assistant-message')) {
@@ -418,5 +386,4 @@
         adjustTextareaHeight(messageInput);
     </script>
 </body>
-
 </html>

@@ -6,40 +6,29 @@ import json
 import logging
 
 # ロギングの設定
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# CORSの設定を更新
+# CORSの設定
 CORS(app, resources={
     r"/*": {
-        "origins": "*",  # すべてのオリジンを許可
+        "origins": ["http://20.89.65.222", "http://localhost:80"],
         "methods": ["GET", "POST"],
-        "allow_headers": ["Content-Type"],
+        "allow_headers": ["Content-Type"]
     }
 })
 
 @app.after_request
 def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
+    # CSPを一時的に無効化
+    response.headers['Content-Security-Policy'] = None
     
-    # CSPの設定を更新
-    csp_directives = [
-        "default-src *",  # すべてのソースを許可
-        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com *",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com *",
-        f"connect-src 'self' https://keko-openai-jpe.openai.azure.com/ *",
-        "img-src 'self' data: *",
-        "font-src 'self' data: https://cdnjs.cloudflare.com *"
-    ]
+    # キャッシュを無効化
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
     
-    response.headers['Content-Security-Policy'] = "; ".join(csp_directives)
     return response
 
 # Azure OpenAI の設定
@@ -47,18 +36,12 @@ endpoint = "https://keko-openai-jpe.openai.azure.com/"
 deployment = "gpt-4"
 subscription_key = os.getenv("AZURE_OPENAI_API_KEY", "REPLACE_WITH_YOUR_KEY_VALUE_HERE")
 
-# 設定のログ出力
-logger.debug(f"Endpoint: {endpoint}")
-logger.debug(f"Deployment: {deployment}")
-logger.debug(f"API Key set: {'Yes' if subscription_key != 'REPLACE_WITH_YOUR_KEY_VALUE_HERE' else 'No'}")
-
 try:
     client = AzureOpenAI(
         azure_endpoint=endpoint,
         api_key=subscription_key,
         api_version="2024-02-15-preview"
     )
-    logger.info("Azure OpenAI client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Azure OpenAI client: {str(e)}")
     raise
@@ -113,18 +96,15 @@ def chat():
 
             except Exception as e:
                 logger.error(f"Error during streaming: {str(e)}")
-                error_details = {
-                    'error': str(e),
-                    'type': str(type(e))
-                }
-                yield f"data: {json.dumps(error_details, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
 
         return Response(
             stream_with_context(generate()), 
             content_type='text/event-stream',
             headers={
                 'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no'
+                'Content-Type': 'text/event-stream',
+                'Connection': 'keep-alive'
             }
         )
 
@@ -133,5 +113,4 @@ def chat():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # プロダクション環境ではポート80を使用
     app.run(host='0.0.0.0', port=80, debug=False)
