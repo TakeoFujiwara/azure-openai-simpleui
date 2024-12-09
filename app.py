@@ -13,7 +13,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+
+# CORSの設定を更新
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",  # すべてのオリジンを許可
+        "methods": ["GET", "POST"],
+        "allow_headers": ["Content-Type"],
+    }
+})
 
 @app.after_request
 def add_security_headers(response):
@@ -21,13 +29,14 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     
+    # CSPの設定を更新
     csp_directives = [
-        "default-src 'self'",
-        "style-src 'self' 'unsafe-inline'",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com",
-        "connect-src 'self' https://keko-openai-jpe.openai.azure.com/",
-        "img-src 'self' data:",
-        "font-src 'self' data:",
+        "default-src *",  # すべてのソースを許可
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com *",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com *",
+        f"connect-src 'self' https://keko-openai-jpe.openai.azure.com/ *",
+        "img-src 'self' data: *",
+        "font-src 'self' data: https://cdnjs.cloudflare.com *"
     ]
     
     response.headers['Content-Security-Policy'] = "; ".join(csp_directives)
@@ -124,4 +133,5 @@ def chat():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True, port=80)
+    # プロダクション環境ではポート80を使用
+    app.run(host='0.0.0.0', port=80, debug=False)

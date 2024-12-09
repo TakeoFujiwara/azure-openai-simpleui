@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Keko's AI</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.1/markdown-it.min.js"></script>
     <style>
+        /* 既存のスタイル */
         body {
             font-family: Arial, sans-serif;
             margin: 0;
@@ -52,6 +52,7 @@
             border-radius: 8px;
             max-width: 80%;
             white-space: pre-wrap;
+            word-wrap: break-word;
         }
 
         .message p {
@@ -123,9 +124,56 @@
         }
 
         .typing-indicator {
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 80%;
+            margin-right: auto;
+            margin-bottom: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .indicator-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ai-label {
+            background-color: #2196f3;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .indicator-text {
             color: #666;
-            font-style: italic;
-            padding: 10px;
+            font-size: 14px;
+        }
+
+        .loading-dots::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+
+            0%,
+            20% {
+                content: '';
+            }
+
+            40% {
+                content: '.';
+            }
+
+            60% {
+                content: '..';
+            }
+
+            80% {
+                content: '...';
+            }
         }
 
         @media (max-width: 600px) {
@@ -157,6 +205,10 @@
             #chat-container {
                 margin-bottom: 140px;
             }
+
+            .typing-indicator {
+                max-width: 90%;
+            }
         }
     </style>
 </head>
@@ -180,38 +232,71 @@
     </div>
 
     <script>
-        const md = window.markdownit();
         const chatContainer = document.getElementById('chat-container');
         const messageForm = document.getElementById('message-form');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
         let currentAssistantMessage = '';
+        let typingIndicator = null;
 
-        // テキストエリアの高さを自動調整する関数
+        // シンプルなテキスト処理関数
+        function formatText(text) {
+            return text
+                .split('\n')
+                .map(line => {
+                    // URLをリンクに変換
+                    line = line.replace(
+                        /(https?:\/\/[^\s]+)/g,
+                        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+                    );
+                    return line;
+                })
+                .join('<br>');
+        }
+
         function adjustTextareaHeight(textarea) {
             textarea.style.height = 'auto';
             const newHeight = Math.min(textarea.scrollHeight, 300);
             textarea.style.height = `${newHeight}px`;
         }
 
-        // テキストエリアの入力イベント
         messageInput.addEventListener('input', function () {
             adjustTextareaHeight(this);
         });
 
-        function convertNewlinesToMarkdown(text) {
-            return text
-                .split('\n')
-                .map(line => {
-                    if (line.trim().match(/^[*-]|\d+\./)) {
-                        return line;
-                    }
-                    if (line.trim() === '') {
-                        return '\n';
-                    }
-                    return line + '  ';
-                })
-                .join('\n');
+        function showTypingIndicator(message) {
+            if (typingIndicator) {
+                chatContainer.removeChild(typingIndicator);
+            }
+            typingIndicator = document.createElement('div');
+            typingIndicator.className = 'typing-indicator';
+            typingIndicator.innerHTML = `
+                <div class="indicator-content">
+                    <div class="ai-label">AI</div>
+                    <div class="indicator-text">${message}<span class="loading-dots"></span></div>
+                </div>
+            `;
+            chatContainer.appendChild(typingIndicator);
+            window.scrollTo({
+                top: document.body.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+
+        function updateTypingIndicator(message) {
+            if (typingIndicator) {
+                const textElement = typingIndicator.querySelector('.indicator-text');
+                if (textElement) {
+                    textElement.innerHTML = `${message}<span class="loading-dots"></span>`;
+                }
+            }
+        }
+
+        function removeTypingIndicator() {
+            if (typingIndicator && typingIndicator.parentNode === chatContainer) {
+                chatContainer.removeChild(typingIndicator);
+                typingIndicator = null;
+            }
         }
 
         messageForm.addEventListener('submit', async (e) => {
@@ -224,10 +309,7 @@
             adjustTextareaHeight(messageInput);
             sendButton.disabled = true;
 
-            const typingIndicator = document.createElement('div');
-            typingIndicator.className = 'message assistant-message typing-indicator';
-            typingIndicator.textContent = '入力中...';
-            chatContainer.appendChild(typingIndicator);
+            showTypingIndicator('接続中');
 
             try {
                 console.log('Sending message to server:', message);
@@ -244,12 +326,13 @@
                 }
 
                 console.log('Server response received');
+                updateTypingIndicator('応答を生成中');
+
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 currentAssistantMessage = '';
 
-                chatContainer.removeChild(typingIndicator);
-
+                let isFirstChunk = true;
                 while (true) {
                     const { value, done } = await reader.read();
                     if (done) {
@@ -267,6 +350,10 @@
                                 const data = JSON.parse(line.slice(6));
                                 console.log('Parsed data:', data);
                                 if (data.content) {
+                                    if (isFirstChunk) {
+                                        removeTypingIndicator();
+                                        isFirstChunk = false;
+                                    }
                                     currentAssistantMessage += data.content;
                                     updateAssistantMessage(currentAssistantMessage);
                                 } else if (data.error) {
@@ -280,9 +367,10 @@
                 }
             } catch (error) {
                 console.error('Error:', error);
+                removeTypingIndicator();
                 appendMessage('assistant', `エラーが発生しました: ${error.message}`);
-                chatContainer.removeChild(typingIndicator);
             } finally {
+                removeTypingIndicator();
                 sendButton.disabled = false;
                 currentAssistantMessage = '';
                 window.scrollTo({
@@ -298,8 +386,7 @@
             messageDiv.className = `message ${role}-message`;
 
             if (role === 'assistant') {
-                const markdownContent = convertNewlinesToMarkdown(content);
-                messageDiv.innerHTML = md.render(markdownContent);
+                messageDiv.innerHTML = formatText(content);
             } else {
                 messageDiv.textContent = content;
             }
@@ -321,15 +408,13 @@
                 chatContainer.appendChild(assistantMessage);
             }
 
-            const markdownContent = convertNewlinesToMarkdown(content);
-            assistantMessage.innerHTML = md.render(markdownContent);
+            assistantMessage.innerHTML = formatText(content);
             window.scrollTo({
                 top: document.body.scrollHeight,
                 behavior: 'smooth'
             });
         }
 
-        // 初期の高さ調整
         adjustTextareaHeight(messageInput);
     </script>
 </body>
